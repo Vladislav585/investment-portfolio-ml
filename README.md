@@ -238,14 +238,15 @@ python pipeline.py
 
 ## Лицензия и авторское право
 
-© 2026 Vladislav585
-
 Данное программное обеспечение распространяется на условиях **некоммерческого использования**. 
 
 - **Разрешено:** копировать, изменять и использовать код в личных и учебных целях.
 - **Запрещено:** использовать код в коммерческих продуктах, перепродавать его или использовать для получения прибыли.
 
 **Отказ от ответственности:** Автор не несет ответственности за любые финансовые последствия использования данного кода. Все расчеты являются теоретическими и не являются финансовой рекомендацией.
+
+© 2026 Vladislav585. Все права защищены
+
 
 <br/><br/>
 <div align="center">
@@ -442,3 +443,5 @@ This software is provided for **Non-Commercial Use Only**.
 - **Prohibited:** Commercial use, re-selling, or use for-profit financial services.
 
 **Disclaimer:** The author is not responsible for any financial losses or consequences resulting from the use of this code. All calculations are theoretical and do not constitute financial advice.
+
+© 2026 Vladislav585. All rights reserved.
