@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 class MoexFullImporter:
-    def __init__(self, cache_file="moex_massive_history.csv"):
+    def __init__(self, cache_file="data/moex_massive_history.csv"):
         self.cache_file = cache_file
         self.history_url = "https://iss.moex.com/iss/history/engines/stock/markets/shares/boards/TQBR/securities/"
         self.session = requests.Session()
@@ -29,24 +29,24 @@ class MoexFullImporter:
                 history = self._get_ticker_history(t, start, today)
                 
                 if not history.empty:
-                    # Проверка на "возраст" акции (в годах)
+                    #Проверка на "возраст" акции
                     days_active = (history.index[-1] - history.index[0]).days
                     if days_active / 365.25 >= min_history_years:
                         data_dict[t] = history
                     else:
                         print(f"Skipped {t}: too young ({days_active} days)")
                 
-                time.sleep(0.05) # MOEX быстрый, 0.05 сек хватит
+                time.sleep(0.05)
                 if (i+1) % 10 == 0:
                     print(f"Загружено {i+1}/{len(tickers)}...")
             except Exception as e:
                 print(f"Ошибка на {t}: {e}")
 
         print("\nОбъединение данных (может занять время)...")
-        # Соединяем по датам. Акции, которые начались позже, просто будут иметь NaN в начале
+        #Соединяем по датам. Акции, которые начались позже, просто будут иметь NaN в начале
         massive_df = pd.concat(data_dict, axis=1)
         
-        # Заполняем редкие пропуски (выходные) методом "последнее известное"
+        #Заполняем редкие пропуски (выходные) методом "последнее известное"
         massive_df = massive_df.ffill()
 
         massive_df.to_csv(self.cache_file)
@@ -77,6 +77,3 @@ class MoexFullImporter:
         df = pd.concat(all_history).drop_duplicates('TRADEDATE')
         df['TRADEDATE'] = pd.to_datetime(df['TRADEDATE'])
         return df.set_index('TRADEDATE')['CLOSE']
-    
-# importer = MoexFullImporter(cache_file="stocks_data.csv")
-# df = importer.get_massive_data(min_volume=15_000_000, force_update=True)
