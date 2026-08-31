@@ -234,6 +234,18 @@ python pipeline.py
 4. **Гарантированное ядро**: минимальные веса голубых фишек в лимитах оптимизатора не дают модели собрать портфель только из волатильных «спутников».
 5. **Shrinkage-ковариация (Ledoit–Wolf)**: ковариационная матрица сжимается, что повышает устойчивость оптимизации Марковица на ограниченной истории.
 
+---
+
+## Лицензия и авторское право
+
+© 2026 Vladislav585
+
+Данное программное обеспечение распространяется на условиях **некоммерческого использования**. 
+
+- **Разрешено:** копировать, изменять и использовать код в личных и учебных целях.
+- **Запрещено:** использовать код в коммерческих продуктах, перепродавать его или использовать для получения прибыли.
+
+**Отказ от ответственности:** Автор не несет ответственности за любые финансовые последствия использования данного кода. Все расчеты являются теоретическими и не являются финансовой рекомендацией.
 
 <br/><br/>
 <div align="center">
@@ -418,4 +430,15 @@ python pipeline.py
 3. **Guaranteed Core:** Minimum weights for Blue Chips ensure the model maintains a foundation in high-liquidity large-cap stocks.
 4. **Ledoit–Wolf Shrinkage:** Improves the stability of the Markowitz optimization, especially when dealing with limited historical data.
 
+---
 
+## License & Copyright
+
+© 2026 Vladislav585
+
+This software is provided for **Non-Commercial Use Only**.
+
+- **Permitted:** Copying, modifying, and using the code for personal or educational purposes.
+- **Prohibited:** Commercial use, re-selling, or use for-profit financial services.
+
+**Disclaimer:** The author is not responsible for any financial losses or consequences resulting from the use of this code. All calculations are theoretical and do not constitute financial advice.
