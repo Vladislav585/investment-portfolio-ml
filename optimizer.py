@@ -120,4 +120,3 @@ class PortfolioEngine:
             print(f"    Доходность: {perf[0]:.1%} | Риск: {perf[1]:.1%} | Шарп: {perf[2]:.2f}")
             active_w = {k: f"{v:.1%}" for k, v in weights.items() if v > 0.01}
             print(f"    Состав: {active_w}")
-        print("\n" + "="*80)

@@ -4,10 +4,12 @@ import matplotlib.pyplot as plt
 
 class BacktestEngine:
     def __init__(self, test_prices):
-        # Берем только тот кусок цен, на котором ТЕСТИРУЕМ (будущее)
         self.data = test_prices
-        self.returns = self.data.pct_change().mask(self.data.pct_change().abs() > 0.5)
-        self.market_benchmark = self.returns.median(axis=1)
+        # Считаем доходности
+        self.returns = self.data.pct_change()
+        self.returns = self.returns.mask(self.returns.abs() > 0.2)
+        self.market_benchmark = self.returns.mean(axis=1)
+
 
     def run_test(self, portfolios_dict):
         print("\n" + "="*80)
