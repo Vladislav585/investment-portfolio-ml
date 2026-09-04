@@ -56,53 +56,80 @@ class PortfolioEngine:
         return self._filter_by_correlation(all_selected)
 
     def build_portfolios(self, risk_free_rate=0.14):
+        # 1. Первичный отбор (Кластеры + Ядро)
         selected_tickers = self._apply_clustering()
-        subset_data = self.data[selected_tickers]
-        mu = expected_returns.mean_historical_return(subset_data)
-        S = risk_models.CovarianceShrinkage(subset_data).ledoit_wolf()
         
-        blue_chips = ['SBER', 'SBERP', 'LKOH', 'GAZP', 'ROSN', 'NVTK', 'GMKN', 'TATN', 'PLZL', 'MGNT', 'BSPB', 'CBOM', 'PHOR']
+        # 2. ТРЕНДОВЫЙ ФИЛЬТР (Momentum)
+        # Считаем доходность за последние 3 месяца (63 торговых дня)
+        # Мы берем данные только из ПРОШЛОГО (self.data), чтобы не подглядывать в будущее
+        short_trend = self.data[selected_tickers].pct_change(63).iloc[-1]
         
+        # Оставляем только те акции, которые сейчас в плюсе (растущий тренд)
+        trending_tickers = short_trend[short_trend > 0].index.tolist()
+        
+        # Защита: если рынок обвалился и никто не растет, оставляем топ-7 лучших по тренду
+        if len(trending_tickers) < 7:
+            trending_tickers = short_trend.nlargest(7).index.tolist()
+            
+        # Обрезаем данные под выжившие тикеры
+        subset_data = self.data[trending_tickers]
+        
+        # 3. Математика (EMA доходность и Полуковариация для Сортино)
+        mu = expected_returns.ema_historical_return(subset_data, span=252)
+        S = risk_models.semicovariance(subset_data, benchmark=0)
+        
+        blue_chips = ['SBER', 'LKOH', 'GAZP', 'ROSN', 'NVTK', 'GMKN', 'TATN', 'PLZL', 'MGNT', 'BSPB', 'CBOM', 'PHOR']
         portfolios = {}
 
-        #SAFE (Минимальный риск)
-        #Лимиты: гиганты от 2%, остальные от 0%
-        b_safe = [(0.02, 0.15) if t in blue_chips else (0, 0.10) for t in selected_tickers]
-        ef = EfficientFrontier(mu, S, weight_bounds=b_safe)
-        ef.min_volatility()
-        portfolios['SAFE'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), ef.clean_weights())
+        # --- ФУНКЦИЯ ДЛЯ ГЕНЕРАЦИИ ГРАНИЦ (Bounds) под текущий набор тикеров ---
+        def get_bounds(tickers):
+            b = []
+            for t in tickers:
+                if t in blue_chips:
+                    b.append((0.03, 0.20)) # Гиганты: минимум 3%
+                else:
+                    b.append((0.00, 0.15)) # Остальные: до 15%
+            return b
 
-        #OPTIMAL (Умеренный - ЯДРО РЫНКА)
-        #Лимиты: гиганты от 3% (чтобы их было видно!), остальные от 0%
-        b_opt = [(0.03, 0.15) if t in blue_chips else (0, 0.15) for t in selected_tickers]
-        ef = EfficientFrontier(mu, S, weight_bounds=b_opt)
-        ef.max_sharpe(risk_free_rate=risk_free_rate)
-        perf_opt = ef.portfolio_performance(risk_free_rate=risk_free_rate)
-        portfolios['OPTIMAL'] = (perf_opt, ef.clean_weights())
-
-        #PROFIT (Агрессивный)
-        #Цель: доходность Умеренного + 5% сверху
+        # --- 1. SAFE (Минимальный риск падения) ---
         try:
-            b_prof = [(0.01, 0.20) if t in blue_chips else (0, 0.25) for t in selected_tickers]
-            ef = EfficientFrontier(mu, S, weight_bounds=b_prof)
-            ef.efficient_return(target_return=perf_opt[0] + 0.05) 
+            current_bounds = get_bounds(trending_tickers)
+            ef = EfficientFrontier(mu, S, weight_bounds=current_bounds)
+            ef.min_volatility()
+            portfolios['SAFE'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), ef.clean_weights())
+        except: pass
+
+        # --- 2. OPTIMAL (Максимальный Сортино) ---
+        try:
+            current_bounds = get_bounds(trending_tickers)
+            ef = EfficientFrontier(mu, S, weight_bounds=current_bounds)
+            ef.max_sharpe(risk_free_rate=risk_free_rate)
+            portfolios['OPTIMAL'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), ef.clean_weights())
+        except: pass
+
+        # --- 3. PROFIT (Агрессивный) ---
+        try:
+            current_bounds = get_bounds(trending_tickers)
+            ef = EfficientFrontier(mu, S, weight_bounds=current_bounds)
+            # Цель: доходность SAFE + 8%
+            target = portfolios['SAFE'][0][0] + 0.08
+            ef.efficient_return(target_return=target)
             portfolios['PROFIT'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), ef.clean_weights())
         except:
-            #Если не вышло, просто берем топ-5 по доходности
-            top_5 = mu.nlargest(5).index.tolist()
-            w_manual = {t: (0.18 if t in top_5 else 0.01) for t in selected_tickers}
-            total = sum(w_manual.values())
-            w_manual = {k: v/total for k, v in w_manual.items()}
-            ef = EfficientFrontier(mu, S)
-            ef.set_weights(w_manual)
-            portfolios['PROFIT'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), w_manual)
+            # Fallback на Max Sharpe с более широкими лимитами
+            ef = EfficientFrontier(mu, S, weight_bounds=(0, 0.25))
+            ef.max_sharpe(risk_free_rate=risk_free_rate)
+            portfolios['PROFIT'] = (ef.portfolio_performance(risk_free_rate=risk_free_rate), ef.clean_weights())
 
-        #RISKY (Спекулятивный)
-        top_3 = mu.nlargest(3).index.tolist()
-        mu_r, S_r = mu[top_3], S.loc[top_3, top_3]
-        ef_r = EfficientFrontier(mu_r, S_r, weight_bounds=(0, 0.60))
-        ef_r.max_sharpe(risk_free_rate=risk_free_rate)
-        portfolios['RISKY'] = (ef_r.portfolio_performance(risk_free_rate=risk_free_rate), ef_r.clean_weights())
+        # --- 4. RISKY (Топ-5 лидеров Momentum) ---
+        try:
+            top_5 = short_trend.nlargest(5).index.tolist()
+            mu_r, S_r = mu[top_5], S.loc[top_5, top_5]
+            # Для спекуляции лимиты 1-40%
+            ef_r = EfficientFrontier(mu_r, S_r, weight_bounds=(0.01, 0.40))
+            ef_r.max_sharpe(risk_free_rate=risk_free_rate)
+            portfolios['RISKY'] = (ef_r.portfolio_performance(risk_free_rate=risk_free_rate), ef_r.clean_weights())
+        except: pass
 
         return portfolios
 

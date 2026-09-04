@@ -77,3 +77,35 @@ class MoexFullImporter:
         df = pd.concat(all_history).drop_duplicates('TRADEDATE')
         df['TRADEDATE'] = pd.to_datetime(df['TRADEDATE'])
         return df.set_index('TRADEDATE')['CLOSE']
+
+    def get_index_history(self, index_id, start_date):
+        """ Загружает ПОЛНУЮ историю индексов (IMOEX, MCFTR) с постраничной навигацией """
+        print(f"[СЕТЬ] Загрузка полной истории индекса {index_id}...")
+        all_history = []
+        start_row = 0
+        
+        while True:
+            # Добавили параметр &start={start_row} для пагинации
+            url = f"https://iss.moex.com/iss/history/engines/stock/markets/index/boards/SNDX/securities/{index_id}.json?from={start_date}&start={start_row}"
+            try:
+                res = self.session.get(url).json()
+                if 'history' not in res or not res['history']['data']:
+                    break
+                
+                df_part = pd.DataFrame(res['history']['data'], columns=res['history']['columns'])
+                all_history.append(df_part[['TRADEDATE', 'CLOSE']])
+                
+                # Если строк меньше 100 — это последняя страница
+                if len(res['history']['data']) < 100:
+                    break
+                start_row += 100
+            except Exception as e:
+                print(f"[!] Ошибка на странице {start_row} индекса {index_id}: {e}")
+                break
+                
+        if not all_history:
+            return pd.Series()
+            
+        df = pd.concat(all_history).drop_duplicates('TRADEDATE')
+        df['TRADEDATE'] = pd.to_datetime(df['TRADEDATE'])
+        return df.set_index('TRADEDATE')['CLOSE'].sort_index()

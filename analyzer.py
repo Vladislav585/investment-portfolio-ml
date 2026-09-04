@@ -1,88 +1,37 @@
 import pandas as pd
 import numpy as np
-from datetime import timedelta
 
 class MarketAnalyzer:
     def __init__(self, df):
         self.data = df
-        #Считаем ежедневную доходность
-        self.returns = self.data.pct_change()
-        self.returns = self.returns.mask(self.returns.abs() > 0.5)
+        # Считаем доходности и сразу чистим их от аномалий (сплитов/глюков)
+        self.returns = self.data.pct_change().mask(self.data.pct_change().abs() > 0.2)
         self.stats = None
 
-    def analyze(self):
-        #ОПРЕДЕЛЯЕМ ПЕРИОДЫ
-        #Последняя дата в наших данных
-        end_date = self.returns.index.max()
-        #Дата 2 года назад
-        start_2y = end_date - timedelta(days=2*365)
+    def get_cleaned_returns(self):
+        """ Возвращает очищенную матрицу доходностей для бектеста """
+        return self.returns
 
-        #РАСЧЕТ ЗА ВЕСЬ ПЕРИОД (Глобальный)
+    def analyze(self, recent_years=2):
+        """ Считает метрики для каждой акции и делит на группы """
+        # Считаем доходность за весь период (Global)
         yield_global = self.returns.mean() * 252
-        vol_global = self.returns.std() * np.sqrt(252)
+        
+        # Считаем доходность за последние N лет (Recent)
+        last_date = self.returns.index.max()
+        start_recent = last_date - pd.DateOffset(years=recent_years)
+        yield_recent = self.returns.loc[start_recent:].mean() * 252
+        
+        volatility = self.returns.std() * np.sqrt(252)
 
-        #РАСЧЕТ ЗА ПОСЛЕДНИЕ 2 ГОДА (Свежий)
-        returns_2y = self.returns.loc[start_2y:]
-        yield_recent = returns_2y.mean() * 252
-
-        #СОБИРАЕМ ТАБЛИЦУ
         self.stats = pd.DataFrame({
             'Yield_Global': yield_global,
             'Yield_Recent': yield_recent,
-            'Volatility': vol_global
-        })
+            'Volatility': volatility
+        }).dropna()
 
-        #Убираем NaN (акции, которые не торговались в последние 2 года, если такие есть)
-        self.stats = self.stats.dropna()
-
-        #КЛАССИФИКАЦИЯ (по Глобальной доходности)
-        self.stats['Group'] = pd.qcut(
-            self.stats['Yield_Global'], 
-            q=3, 
-            labels=['Laggards', 'Neutral', 'Leaders']
-        )
+        # Классификация
+        self.stats['Group'] = pd.qcut(self.stats['Yield_Global'], q=3, labels=['Laggards', 'Neutral', 'Leaders'])
+        self.stats['Trend'] = np.where(self.stats['Yield_Recent'] > self.stats['Yield_Global'], "Accelerating", "Slowing")
         
-        #Добавляем колонку Trend: 
-        #Если свежая доходность выше глобальной — акция ускоряется, если ниже — замедляется.
-        self.stats['Trend'] = np.where(
-            self.stats['Yield_Recent'] > self.stats['Yield_Global'], 
-            "Accelerating", "Slowing"
-        )
-
-        self.stats = self.stats.sort_values(by='Yield_Global', ascending=False)
         return self.stats
-
-    def show_console_summary(self):
-        if self.stats is None: self.analyze()
-
-        print("\n" + "="*85)
-        print(f" ДИНАМИЧЕСКИЙ АНАЛИЗ РЫНКА (История vs 2 года, {len(self.stats)} акций)")
-        print("="*85)
-        
-        #Названия колонок для вывода
-        cols = ['Yield_Global', 'Yield_Recent', 'Trend', 'Volatility']
-
-        print("\n>>> ТОП-10 ИСТОРИЧЕСКИХ ЛИДЕРОВ (Leaders)")
-        #Форматируем вывод, чтобы доходности были в процентах
-        summary = self.stats[self.stats['Group'] == 'Leaders'].head(10)[cols].copy()
-        print(summary)
-
-        print("\n>>> 10 АКЦИЙ СРЕДНЕГО ЭШЕЛОНА (Neutral)")
-        neutral_stocks = self.stats[self.stats['Group'] == 'Neutral']
-        mid = len(neutral_stocks) // 2
-        print(neutral_stocks.iloc[mid-5 : mid+5][cols])
-
-        print("\n>>> ТОП-10 АУТСАЙДЕРОВ (Laggards)")
-        print(self.stats[self.stats['Group'] == 'Laggards'].tail(10)[cols])
-        print("\n" + "="*85)
-
-    def export_to_txt(self, filename="data/market_dynamics.txt"):
-        if self.stats is None: self.analyze()
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(f"ОТЧЕТ ПО ДИНАМИКЕ АКЦИЙ MOEX (История vs Последние 2 года)\n")
-            f.write("-" * 80 + "\n")
-            f.write(f"{'Тикер':<10} | {'Группа':<10} | {'Global %':>10} | {'Recent %':>10} | {'Trend':<15}\n")
-            f.write("-" * 80 + "\n")
-            for ticker, row in self.stats.iterrows():
-                f.write(f"{ticker:<10} | {row['Group']:<10} | {row['Yield_Global']:>9.1%} | {row['Yield_Recent']:>9.1%} | {row['Trend']:<15}\n")
-        print(f"\n[УСПЕХ] Отчет по динамике создан: {filename}")
