@@ -7,7 +7,7 @@
 
 Система реализует полный цикл: сбор данных с серверов Московской биржи → анализ динамики акций → отбор кандидатов → оптимизация весов по Марковицу → ретроспективное сравнение полученных портфелей с рынком.
 
-Важно: портфели строятся и оцениваются на одной и той же истории (in-sample). Проект показывает, как повели бы себя портфели, собранные с сегодняшним знанием, а не проверяет стратегию как торговую. Честный out-of-sample тест (walk-forward) — в планах, см. раздел «Ограничения».
+Важно: портфели строятся и оцениваются на одной и той же истории (in-sample).
 
 > ⚠️ Disclaimer: Проект носит исследовательский характер. Прошлые результаты не гарантируют будущую доходность.
 
@@ -263,7 +263,7 @@ python pipeline.py
 
 The pipeline downloads the full trading history of MOEX stocks, analyzes each security's dynamics, selects candidates (blue chips + clustering + correlation filter), optimizes portfolio weights using Markowitz theory (Efficient Frontier), and compares the resulting portfolios against the market retrospectively.
 
-Important: portfolios are constructed and evaluated on the same historical data (in-sample). The project shows how portfolios built with today's knowledge would have performed, not whether the strategy works as a trading system. A proper out-of-sample test (walk-forward) is planned — see "Limitations".
+Important: portfolios are constructed and evaluated on the same historical data (in-sample).
 
 > ⚠️ This project is for research purposes only and does not constitute investment advice.
 
