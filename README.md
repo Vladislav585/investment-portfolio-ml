@@ -5,7 +5,9 @@
 
 Автоматический конвейер (pipeline) для построения инвестиционных портфелей на акциях Московской биржи. 
 
-Система реализует полный цикл: от сбора сырых данных с серверов Московской биржи до математической оптимизации весов и верификации стратегий на исторических данных.
+Система реализует полный цикл: сбор данных с серверов Московской биржи → анализ динамики акций → отбор кандидатов → оптимизация весов по Марковицу → ретроспективное сравнение полученных портфелей с рынком.
+
+Важно: портфели строятся и оцениваются на одной и той же истории (in-sample). Проект показывает, как повели бы себя портфели, собранные с сегодняшним знанием, а не проверяет стратегию как торговую. Честный out-of-sample тест (walk-forward) — в планах, см. раздел «Ограничения».
 
 > ⚠️ Disclaimer: Проект носит исследовательский характер. Прошлые результаты не гарантируют будущую доходность.
 
@@ -18,7 +20,7 @@
 - Динамический анализ каждой акции: глобальная доходность за всю историю, доходность за последние 2 года, волатильность, группа (лидер/нейтральный/аутсайдер) и тренд (ускоряется/замедляется)
 - Автоматический отбор акций: «голубые фишки» + кластеризация KMeans + фильтр сильно коррелирующих бумаг
 - Сборка 4 готовых портфелей разного профиля риска через оптимизацию границы эффективности (PyPortfolioOpt)
-- Синхронизированный бэктест портфелей за 1, 2, 3 и 5 лет против «рынка» (медианы всех акций)
+- Ретроспективное сравнение портфелей с рынком за 1, 2, 3 и 5 лет (in-sample; бенчмарк — медианная доходность всех акций выборки)
 - Отчёты в консоль и в текстовый файл
 
 ---
@@ -132,12 +134,12 @@
 
 #### 4. `backtester.py` — класс `BacktestEngine`
 
-Проверяет портфели на истории за последние N лет (`run_period`):
+Считает, как повели бы себя построенные портфели на истории за последние N лет (`run_period`):
 - дневная доходность портфеля = взвешенная сумма доходностей его акций;
 - накопленная кривая капитала — наращивание `(1 + r).cumprod()`;
 - метрики: **итоговая доходность**, **максимальная просадка** (от исторического максимума кривой), **Шарп** = (годовая доходность − 14% безрисковой ставки) / волатильность.
 
-Особенность: «рынок» здесь — не индекс MOEX, а **медианная дневная доходность всех акций** выборки (`_get_market_benchmark`). Медиана игнорирует одиночные выбросы и перекос индекса в сторону гигантов — это поведение «типичной акции», с которой портфели сравниваются на тех же датах.
+Бенчмарк — медианная дневная доходность всех акций выборки (`_get_market_benchmark`): поведение «типичной акции» на тех же датах. Это неинвестируемый ориентир; сравнение с индексом полной доходности MCFTR — в планах.
 
 `compare_strategies(periods=[1, 2, 3, 5])` печатает таблицу «портфель vs рынок» для каждого горизонта. `plot_backtest_charts()` строит график роста капитала (в текущем `pipeline.py` вызов закомментирован).
 
@@ -230,7 +232,7 @@ python pipeline.py
 
 1. **Фильтр выбросов**: дневные изменения цены >50% обнуляются на входе анализатора и бэктестера — сплит или «глюк» данных не искажает статистику.
 2. **Кэш вместо базы данных**: вся история — один CSV; простой и переносимый вариант для персонального использования.
-3. **Медиана вместо индекса** в бэктесте: не нужно догружать данные индекса MOEX, а сравнение остаётся честным («типичная акция» на тех же датах).
+3. **Медиана как бенчмарк**: быстрое решение без загрузки данных индекса. Даёт представление о «типичной акции», но не является инвестируемым ориентиром — корректный бенчмарк (MCFTR) запланирован.
 4. **Гарантированное ядро**: минимальные веса голубых фишек в лимитах оптимизатора не дают модели собрать портфель только из волатильных «спутников».
 5. **Shrinkage-ковариация (Ledoit–Wolf)**: ковариационная матрица сжимается, что повышает устойчивость оптимизации Марковица на ограниченной истории.
 
@@ -259,7 +261,9 @@ python pipeline.py
 
 # MOEX Investment Portfolio
 
-An automated pipeline for constructing investment portfolios based on Moscow Exchange (MOEX) stocks. The project automatically downloads the entire trading history of stocks from MOEX, analyzes the dynamics of each security, selects candidates using machine learning (clustering), optimizes portfolio weights according to Markowitz theory (Efficient Frontier), and verifies strategies via backtesting against a "typical market stock."
+The pipeline downloads the full trading history of MOEX stocks, analyzes each security's dynamics, selects candidates (blue chips + clustering + correlation filter), optimizes portfolio weights using Markowitz theory (Efficient Frontier), and compares the resulting portfolios against the market retrospectively.
+
+Important: portfolios are constructed and evaluated on the same historical data (in-sample). The project shows how portfolios built with today's knowledge would have performed, not whether the strategy works as a trading system. A proper out-of-sample test (walk-forward) is planned — see "Limitations".
 
 > ⚠️ This project is for research purposes only and does not constitute investment advice.
 
@@ -272,7 +276,7 @@ An automated pipeline for constructing investment portfolios based on Moscow Exc
 - **Dynamic Analysis:** Calculates global historical yield, recent 2-year yield, volatility, group classification (Leader/Neutral/Laggard), and trend (Accelerating/Slowing).
 - **Automated Selection:** Hybrid strategy combining "Blue Chips" + KMeans clustering + a correlation filter to remove redundant assets.
 - **Multi-Profile Optimization:** Generates 4 distinct portfolios based on risk profile using Efficient Frontier optimization (PyPortfolioOpt).
-- **Synchronized Backtesting:** Tests strategies over 1, 2, 3, and 5-year horizons against the "Market" (median of all stocks).
+- **Retrospective Comparison**: Compares portfolios against the market over 1, 2, 3, and 5-year horizons (in-sample; benchmark — median daily return of all stocks in the sample).
 - **Comprehensive Reporting:** Outputs results to the console and detailed text files.
 
 ---
@@ -380,9 +384,12 @@ Operates in three steps: selection → estimation → optimization.
 
 #### 4. `backtester.py` — `BacktestEngine` Class
 
-Evaluates portfolios over the last N years:
-- Calculates cumulative capital curves using `(1 + r).cumprod()`.
-- Metrics: **Total Return**, **Max Drawdown**, **Sharpe Ratio** (using a 14% risk-free rate).
+Computes how the constructed portfolios would have performed over the last N years (`run_period`):
+- **portfolio daily return**: weighted sum of stock returns with fixed weights (equivalent to free daily rebalancing to target allocations);
+- **cumulative capital curve**: (1 + r).cumprod();
+- **metrics**: total return, maximum drawdown, Sharpe ratio = (annualized return − risk-free rate) / volatility.
+
+Benchmark — median daily return of all stocks in the sample (_get_market_benchmark): the behavior of a "typical stock" on the same dates. This is a non-investable reference; comparison against the MCFTR total return index is planned.
 
 **Note:** The "Market" benchmark is calculated as the **median daily return of all stocks**, which ignores outliers and provides a realistic "typical stock" comparison.
 
@@ -426,8 +433,8 @@ python pipeline.py
 
 ## Key Project Decisions
 
-1. **Outlier Filtering:** Daily price changes >50% are zeroed out to prevent data glitches from skewing statistics.
-2. **Median Benchmark:** Using the median instead of a mean or a cap-weighted index provides a fairer comparison against a "typical" market participant.
+1. **Outlier Filtering**: Daily price changes >50% are masked as NaN to protect against data glitches. Side effect: genuine extreme moves are masked too, and stock splits are not handled as splits. This is a simplification — see "Limitations"
+2. **Median Benchmark:** A quick solution that avoids loading index data. It reflects a "typical stock" but is not an investable benchmark — a proper one (MCFTR) is planned.
 3. **Guaranteed Core:** Minimum weights for Blue Chips ensure the model maintains a foundation in high-liquidity large-cap stocks.
 4. **Ledoit–Wolf Shrinkage:** Improves the stability of the Markowitz optimization, especially when dealing with limited historical data.
 
