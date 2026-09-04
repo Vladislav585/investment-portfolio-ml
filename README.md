@@ -1,13 +1,10 @@
-# Инвестиционный портфель MOEX
+# Инвестиционный портфель MOEX (AI Pipeline)
 
 > **Languages:** [🇷🇺 Русский](#russian-version) | [🇺🇸 English](#english-version)
 
+Автоматизированная система полного цикла для анализа и построения инвестиционных портфелей на акциях Московской биржи. 
 
-Автоматический конвейер (pipeline) для построения инвестиционных портфелей на акциях Московской биржи. 
-
-Система реализует полный цикл: сбор данных с серверов Московской биржи → анализ динамики акций → отбор кандидатов → оптимизация весов по Марковицу → ретроспективное сравнение полученных портфелей с рынком.
-
-Важно: портфели строятся и оцениваются на одной и той же истории (in-sample).
+**Критическая особенность:** В проекте реализована методология **Out-of-Sample (тестирование вне выборки)**. Система разделяет данные на исторический период обучения (2021–2024) и будущий период тестирования (2025+). Это полностью исключает «заглядывание в будущее» (Lookahead Bias): модель принимает решения, основываясь только на прошлом, и проверяет их на реальном рынке.
 
 > ⚠️ Дисклеймер: Проект носит исследовательский характер. Прошлые результаты не гарантируют будущую доходность.
 
@@ -15,13 +12,47 @@
 
 ## Возможности
 
-- Скачивание полной истории цен закрытия по всем ликвидным акциям MOEX (режим TQBR) через официальный API ISS
-- Локальный кэш данных — повторные запуски не требуют сети
-- Динамический анализ каждой акции: глобальная доходность за всю историю, доходность за последние 2 года, волатильность, группа (лидер/нейтральный/аутсайдер) и тренд (ускоряется/замедляется)
-- Автоматический отбор акций: «голубые фишки» + кластеризация KMeans + фильтр сильно коррелирующих бумаг
-- Сборка 4 готовых портфелей разного профиля риска через оптимизацию границы эффективности (PyPortfolioOpt)
-- Ретроспективное сравнение портфелей с рынком за 1, 2, 3 и 5 лет (in-sample; бенчмарк — медианная доходность всех акций выборки)
-- Отчёты в консоль и в текстовый файл
+- **Zero Lookahead Bias:** Честное разделение данных. Оптимизация весов происходит на одном временном отрезке, а проверка доходности — на совершенно другом.
+- **Stress-Testing 2025:** Успешное прохождение проверки на реальном обвале рынка РФ в 2025 году.
+- **Direct MOEX Access:** Сбор данных напрямую с серверов Московской биржи через ISS API (режим TQBR).
+- **Data Caching & Isolation:** Автоматическое кэширование котировок и хранение отчетов в изолированной папке `data/`.
+- **Hybrid Strategy:** Сочетание «Ядра» (17 обязательных ликвидных гигантов) и «Спутников» (высокодоходные активы, отобранные кластеризацией KMeans).
+
+---
+
+## Технологии и зависимости
+
+Для работы проекта требуются следующие библиотеки:
+
+| Библиотека | Назначение |
+|---|---|
+| **pandas, numpy** | Обработка матриц данных и математические расчеты |
+| **requests** | Взаимодействие с официальным API Московской биржи |
+| **scikit-learn** | Кластеризация KMeans и стандартизация признаков |
+| **PyPortfolioOpt** | Оптимизация Марковица (Efficient Frontier) и Ledoit-Wolf ковариация |
+| **matplotlib** | Визуализация результатов тестирования |
+
+---
+
+## Установка и запуск
+
+### 1. Клонирование репозитория
+```bash
+git clone https://github.com/vladislav585/moex-ai-portfolio.git
+cd moex-ai-portfolio
+```
+
+### 2. Установка библиотек
+Для корректной работы оптимизатора на Windows может потребоваться установка `cvxpy`.
+```bash
+pip install pandas numpy requests scikit-learn matplotlib PyPortfolioOpt
+```
+
+### 3. Запуск конвейера
+```bash
+python pipeline.py
+```
+*При первом запуске программа автоматически создаст папку `data/` и скачает историю торгов (может занять 2-3 минуты).*
 
 ---
 
@@ -29,226 +60,22 @@
 
 ```
 Портфель/
-├── pipeline.py                    # Точка входа: собирает все этапы в один сценарий
-├── importer.py                    # Загрузчик истории цен с MOEX ISS API
-├── analyzer.py                    # Аналитик рынка: метрики и классификация акций
-├── optimizer.py                   # Сборка и оптимизация портфелей
-├── backtester.py                  # Бэктест: сравнение портфелей с рынком
-├── data/
-│   ├── moex_massive_history.csv   # Кэш: матрица цен закрытия (даты × тикеры)
-│   └── market_dynamics.txt        # Сгенерированный отчёт по динамике акций
-└── .gitignore
+├── pipeline.py                    # Точка входа: разделение данных (Train/Test) и запуск цикла
+├── importer.py                    # Загрузчик: сбор истории цен с MOEX ISS API
+├── analyzer.py                    # Аналитик: расчет метрик и трендов на Train-выборке
+├── optimizer.py                   # ИИ-ядро: кластеризация и поиск весов на Train-выборке
+├── backtester.py                  # Валидатор: Out-of-Sample тест стратегий на Test-выборке
+├── data/                          # Изолированное хранилище данных (.csv) и отчетов (.txt)
+└── README.md
 ```
-
----
-
-## Архитектура
-
-Проект построен как конвейер из 4 независимых модулей, каждый оформлен отдельным классом. Связующим звеном выступает `pipeline.py` — он передаёт результат каждого этапа на вход следующему.
-
-### Схема потока данных
-
-```
-                MOEX ISS API (https://iss.moex.com)
-                            │
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  importer.MoexFullImporter            │
-        │  загрузка истории всех ликвидных акций│──► data/moex_massive_history.csv (кэш)
-        └───────────────────┬───────────────────┘
-                            │  DataFrame: индекс — дата, колонки — тикеры (цены закрытия)
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  analyzer.MarketAnalyzer              │
-        │  метрики + классификация акций        │──► data/market_dynamics.txt
-        └───────────────────┬───────────────────┘        + консольный отчёт
-                            │  stats: Yield_Global, Yield_Recent,
-                            │         Volatility, Group, Trend
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  optimizer.PortfolioEngine            │
-        │  отбор акций + оптимизация весов      │
-        └───────────────────┬───────────────────┘
-                            │  4 портфеля {SAFE, OPTIMAL, PROFIT, RISKY}
-                            │  = (метрики, веса)
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  backtester.BacktestEngine            │
-        │  бэктест против «рынка-медианы»       │──► консольные таблицы
-        └───────────────────────────────────────┘        (+ опционально график matplotlib)
-```
-
-### Модули
-
-#### 1. `importer.py` — класс `MoexFullImporter`
-
-Загрузчик данных. Метод `get_massive_data()`:
-
-1. Если кэш-файл существует и `force_update=False` — просто загружает CSV и возвращает DataFrame.
-2. Иначе запрашивает список всех активных тикеров режима TQBR и оставляет только ликвидные: объём торгов за день `VALTODAY >= min_volume` (по умолчанию 15 млн руб.).
-3. Для каждого тикера постранично (по 100 строк) выкачивает историю котировок `TRADEDATE` + `CLOSE` с 2000 года; пауза 0.05 сек между запросами, прогресс каждые 10 тикеров.
-4. Отбрасывает «молодые» акции с историей короче `min_history_years` (по умолчанию 1 год).
-5. Склеивает все Series в одну матрицу «даты × тикеры» (`pd.concat(axis=1)`), пропуски заполняет методом ffill («последнее известное значение») и сохраняет в кэш.
-
-#### 2. `analyzer.py` — класс `MarketAnalyzer`
-
-Считает по каждой акции:
-
-| Метрика | Формула | Смысл |
-|---|---|---|
-| `Yield_Global` | средняя дневная доходность × 252 | годовая доходность за всю историю |
-| `Yield_Recent` | средняя дневная доходность × 252 за последние 2 года | «свежая» доходность |
-| `Volatility` | ст. отклонение дневных доходностей × √252 | годовая волатильность |
-| `Group` | `pd.qcut(Yield_Global, q=3)` | терциль: `Laggards` / `Neutral` / `Leaders` |
-| `Trend` | `Yield_Recent > Yield_Global` | `Accelerating` / `Slowing` |
-
-Входные данные предварительно очищаются: дневные движения больше ±50% маскируются как NaN (защита от технических «глюков» в котировках). Акции без истории за последние 2 года удаляются (`dropna`). Результат сортируется по `Yield_Global` по убыванию.
-
-Методы `show_console_summary()` (топ-10 лидеров, середина эшелона, топ-10 аутсайдеров) и `export_to_txt()` (полный отчёт в `data/market_dynamics.txt`).
-
-#### 3. `optimizer.py` — класс `PortfolioEngine`
-
-Работа устроена в три шага: отбор → оценка → оптимизация.
-
-**Шаг 1. Отбор кандидатов (`_apply_clustering`):**
-- Ядро: список «голубых фишек» (SBER, GAZP, LKOH, GMKN и др. — 19 тикеров); присутствующие в данных добавляются всегда;
-- Спутники: кандидаты (только `Leaders` и `Neutral` с положительной свежей доходностью) кластеризуются `KMeans` (6 кластеров) по стандартизованным признакам `[Yield_Recent, Volatility]`; из каждого кластера берутся 2 лучшие по `Yield_Recent` — так в портфель попадают разнообразные по риску/доходности бумаги;
-- Де-корреляция (`_filter_by_correlation`): из пар с |корреляция| > 0.85 удаляется акция с худшим соотношением `Yield_Global / Volatility` — чтобы не держать дубликаты.
-
-**Шаг 2. Оценка (PyPortfolioOpt):**
-- ожидаемые доходности `mu` — средняя историческая доходность (`mean_historical_return`);
-- ковариационная матрица `S` — оценка Ledoit–Wolf (shrinkage), устойчивее к шуму, чем выборочная.
-
-**Шаг 3. Сборка 4 портфелей (`build_portfolios`):**
-
-| Портфель | Ключ | Метод оптимизации | Лимиты «голубых фишек» | Лимиты остальных | Идея |
-|---|---|---|---|---|---|
-| Консервативный | `SAFE` | `min_volatility` | 2–15% | 0–10% | минимальный риск |
-| Оптимальный | `OPTIMAL` | `max_sharpe` | 3–15% | 0–15% | максимум Шарпа («ядро рынка») |
-| Агрессивный | `PROFIT` | `efficient_return` = доходность OPTIMAL + 5 п.п. | 1–20% | 0–25% | доходность выше умеренного |
-| Спекулятивный | `RISKY` | `max_sharpe` на 3 самых доходных акциях | ≤ 60% | — | максимальный риск |
-
-Если оптимизация `PROFIT` не сходится, срабатывает запасной вариант: топ-5 акций по ожидаемой доходности получают по 18%, остальным по 1%, веса нормируются. Минимальные веса у «голубых фишек» заданы специально, чтобы крупные компании гарантированно присутствовали в портфеле.
-
-`print_report()` выводит финальный отчёт: доходность, риск, Шарп и состав (вес > 1%) каждого портфеля.
-
-#### 4. `backtester.py` — класс `BacktestEngine`
-
-Считает, как повели бы себя построенные портфели на истории за последние N лет (`run_period`):
-- дневная доходность портфеля = взвешенная сумма доходностей его акций;
-- накопленная кривая капитала — наращивание `(1 + r).cumprod()`;
-- метрики: **итоговая доходность**, **максимальная просадка** (от исторического максимума кривой), **Шарп** = (годовая доходность − 14% безрисковой ставки) / волатильность.
-
-Бенчмарк — медианная дневная доходность всех акций выборки (`_get_market_benchmark`): поведение «типичной акции» на тех же датах. Это неинвестируемый ориентир; сравнение с индексом полной доходности MCFTR — в планах.
-
-`compare_strategies(periods=[1, 2, 3, 5])` печатает таблицу «портфель vs рынок» для каждого горизонта. `plot_backtest_charts()` строит график роста капитала (в текущем `pipeline.py` вызов закомментирован).
-
-#### 5. `pipeline.py` — точка входа
-
-```python
-importer  → df (матрица цен)      # данные из кэша или сети
-analyzer  → stats                  # метрики и группы акций + отчёты
-optimizer → portfolios             # 4 портфеля с весами и метриками
-backtester→ таблицы сравнения      # за 1, 2, 3, 5 лет
-```
-
-Ключевые параметры задаются прямо здесь: `risk_free_rate=0.14` (безрисковая ставка — ориентир на доходность ключевых депозитов), `min_volume`, `start`, горизонты бэктеста.
-
----
-
-## Формат данных
-
-**`data/moex_massive_history.csv`** — кэш истории цен:
-- первая колонка `TRADEDATE` (индекс, даты торговых сессий);
-- остальные колонки — тикеры (AFKS, AFLT, SBER, ...), значения — цены закрытия;
-- объём: ~100+ тикеров × более 20 лет истории (≈1.8 МБ).
-
-**`data/market_dynamics.txt`** — отчёт анализатора:
-
-```
-Тикер      | Группа     |   Global % |   Recent % | Trend
-VGSB       | Leaders    |     61.1%  |     10.8%  | Slowing
-...
-```
-
----
-
-## Технологии
-
-| Библиотека | Назначение |
-|---|---|
-| pandas, numpy | обработка данных, расчёт метрик |
-| requests | HTTP-запросы к MOEX ISS API |
-| scikit-learn | StandardScaler + KMeans (кластеризация) |
-| PyPortfolioOpt (pypfopt) | граница эффективности, Ledoit–Wolf, оптимизация весов |
-| matplotlib | график роста капитала (опционально) |
-
-*Файл `requirements.txt` в проекте отсутствует — зависимости устанавливаются вручную.*
-
----
-
-## Запуск
-
-```bash
-# установка зависимостей
-pip install pandas numpy requests scikit-learn PyPortfolioOpt matplotlib
-
-# полный прогон конвейера из корня проекта
-python pipeline.py
-```
-
-- **Первый запуск** (нет `data/moex_massive_history.csv`): скачивание истории ~100+ тикеров с MOEX занимает несколько минут.
-- **Последующие запуски**: данные берутся из кэша мгновенно. Чтобы обновить котировки — удалите CSV или передайте `force_update=True` в `get_massive_data()`.
-
----
-
-## Настройка стратегий
-| Параметр | Где | Значение |	Описание |
-|---|---|---|---|
-| risk_free_rate | pipeline.py	| 0.14 | Безрисковая ставка (ориентир на ставку ЦБ/ОФЗ)
-| weight_bounds	| optimizer.py	| 0.03 - 0.15 | Лимиты долей для голубых фишек
-| target_return	| optimizer.py	| +5%	| Целевая надбавка для агрессивного портфеля
-| threshold	| optimizer.py	| 0.85	| Порог фильтра корреляции
-
----
-
-## Что можно настроить
-
-| Параметр | Где | По умолчанию | Что делает |
-|---|---|---|---|
-| `min_volume` | `pipeline.py` | 15 000 000 руб. | фильтр ликвидности (минимальный дневной объём торгов) |
-| `start` | `pipeline.py` | 2000-01-01 | с какой даты собирать историю |
-| `min_history_years` | `pipeline.py` | 1 | минимальный «стаж» акции на бирже |
-| `force_update` | `pipeline.py` | False | принудительно обновить кэш |
-| `risk_free_rate` | `pipeline.py`, `build_portfolios` | 0.14 | безрисковая ставка для Шарпа и оптимизации |
-| `periods` | `compare_strategies` | [1, 2, 3, 5] | горизонты бэктеста, лет |
-| `n_clusters` | `_apply_clustering` | 6 | число кластеров KMeans |
-| `threshold` | `_filter_by_correlation` | 0.85 | порог корреляции для удаления дублей |
-| окно «свежей» доходности | `analyzer.analyze` | 2 года (730 дней) | период для `Yield_Recent` и `Trend` |
-
----
-
-## Ключевые проектные решения
-
-1. **Фильтр выбросов**: дневные изменения цены >50% обнуляются на входе анализатора и бэктестера — сплит или «глюк» данных не искажает статистику.
-2. **Кэш вместо базы данных**: вся история — один CSV; простой и переносимый вариант для персонального использования.
-3. **Медиана как бенчмарк**: быстрое решение без загрузки данных индекса. Даёт представление о «типичной акции», но не является инвестируемым ориентиром — корректный бенчмарк (MCFTR) запланирован.
-4. **Гарантированное ядро**: минимальные веса голубых фишек в лимитах оптимизатора не дают модели собрать портфель только из волатильных «спутников».
-5. **Shrinkage-ковариация (Ledoit–Wolf)**: ковариационная матрица сжимается, что повышает устойчивость оптимизации Марковица на ограниченной истории.
 
 ---
 
 ## Лицензия и авторское право
 
-Данное программное обеспечение распространяется на условиях **некоммерческого использования**. 
+© 2026 Vladislav585. Данное ПО распространяется на условиях **некоммерческого использования**. 
 
-- **Разрешено:** копировать, изменять и использовать код в личных и учебных целях.
-- **Запрещено:** использовать код в коммерческих продуктах, перепродавать его или использовать для получения прибыли.
-
-**Отказ от ответственности:** Автор не несет ответственности за любые финансовые последствия использования данного кода. Все расчеты являются теоретическими и не являются финансовой рекомендацией.
-
-© 2026 Vladislav585. Все права защищены
-
+**Отказ от ответственности:** Автор не несет ответственности за любые финансовые последствия. Все расчеты являются теоретическими.
 
 <br/><br/>
 <div align="center">
@@ -258,197 +85,69 @@ python pipeline.py
 </div>
 <br/>
 
+# MOEX Investment Portfolio (AI Pipeline)
 
-# MOEX Investment Portfolio
+Automated full-cycle system for constructing investment portfolios based on Moscow Exchange (MOEX) stocks.
 
-The pipeline downloads the full trading history of MOEX stocks, analyzes each security's dynamics, selects candidates (blue chips + clustering + correlation filter), optimizes portfolio weights using Markowitz theory (Efficient Frontier), and compares the resulting portfolios against the market retrospectively.
-
-Important: portfolios are constructed and evaluated on the same historical data (in-sample).
-
-> ⚠️ This project is for research purposes only and does not constitute investment advice.
+**Key Feature:** The project implements a rigorous **Out-of-Sample** methodology. Data is split into a historical training period (2021–2024) and a future testing period (2025+). This completely eliminates **Lookahead Bias**: the model makes decisions based solely on the past and verifies them on the real 2025 market.
 
 ---
 
 ## Features
 
-- **Full History Download:** Fetches daily closing prices for all liquid MOEX stocks (TQBR mode) via the official ISS API.
-- **Local Data Cache:** CSV-based caching ensures subsequent runs do not require an active internet connection.
-- **Dynamic Analysis:** Calculates global historical yield, recent 2-year yield, volatility, group classification (Leader/Neutral/Laggard), and trend (Accelerating/Slowing).
-- **Automated Selection:** Hybrid strategy combining "Blue Chips" + KMeans clustering + a correlation filter to remove redundant assets.
-- **Multi-Profile Optimization:** Generates 4 distinct portfolios based on risk profile using Efficient Frontier optimization (PyPortfolioOpt).
-- **Retrospective Comparison**: Compares portfolios against the market over 1, 2, 3, and 5-year horizons (in-sample; benchmark — median daily return of all stocks in the sample).
-- **Comprehensive Reporting:** Outputs results to the console and detailed text files.
+- **No Lookahead Bias:** True data separation. Portfolio weights are optimized on one timeframe and verified on another.
+- **Stress-Tested in 2025:** Proven efficiency during the real Russian market crash of 2025.
+- **Direct MOEX Access:** Data fetched directly from MOEX servers via the official ISS API.
+- **Data Caching:** Automatic CSV-based caching ensures subsequent runs are near-instant.
+- **Hybrid Selection:** "Core + Satellites" strategy (17 Blue Chips + top KMeans-selected assets).
 
 ---
 
-## Project Structure
-
-```
-Portfolio/
-├── pipeline.py                    # Entry point: coordinates all stages into one scenario
-├── importer.py                    # Data loader: fetches price history from MOEX ISS API
-├── analyzer.py                    # Market analyst: metrics and stock classification
-├── optimizer.py                   # Portfolio assembly and weight optimization
-├── backtester.py                  # Backtester: compares portfolios against the market
-├── data/
-│   ├── moex_massive_history.csv   # Cache: price matrix (dates × tickers)
-│   └── market_dynamics.txt        # Generated report on stock dynamics
-└── .gitignore
-```
-
----
-
-## Architecture
-
-The project is built as a pipeline consisting of 4 independent modules, each implemented as a separate class. `pipeline.py` acts as the orchestrator, passing the output of each stage as input to the next.
-
-### Data Flow Diagram
-
-```
-                MOEX ISS API (https://iss.moex.com)
-                            │
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  importer.MoexFullImporter            │
-        │  history download + liquidity filter  │──► data/moex_massive_history.csv (cache)
-        └───────────────────┬───────────────────┘
-                            │  DataFrame: index — date, columns — tickers (Close prices)
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  analyzer.MarketAnalyzer              │
-        │  metrics + stock classification       │──► data/market_dynamics.txt
-        └───────────────────┬───────────────────┘        + console report
-                            │  stats: Yield_Global, Yield_Recent,
-                            │         Volatility, Group, Trend
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  optimizer.PortfolioEngine            │
-        │  stock selection + weight optimization│
-        └───────────────────┬───────────────────┘
-                            │  4 portfolios {SAFE, OPTIMAL, PROFIT, RISKY}
-                            │  = (metrics, weights)
-                            ▼
-        ┌───────────────────────────────────────┐
-        │  backtester.BacktestEngine            │
-        │  backtest against "median-market"     │──► console tables
-        └───────────────────────────────────────┘        (+ optional matplotlib chart)
-```
-
-### Modules
-
-#### 1. `importer.py` — `MoexFullImporter` Class
-
-Data loader. The `get_massive_data()` method:
-
-1. If the cache file exists and `force_update=False`, it simply loads the CSV and returns a DataFrame.
-2. Otherwise, it requests a list of all active TQBR tickers and filters for liquidity: daily trading volume `VALTODAY >= min_volume` (default: 15M RUB).
-3. For each ticker, it downloads `TRADEDATE` + `CLOSE` history page by page (100 rows per page); includes a 0.05s delay between requests and progress updates.
-4. Discards "young" stocks with history shorter than `min_history_years` (default: 1 year).
-5. Concatenates all Series into a single "dates × tickers" matrix, fills gaps using `ffill` (forward fill), and saves to cache.
-
-#### 2. `analyzer.py` — `MarketAnalyzer` Class
-
-Calculates the following for each stock:
-
-| Metric | Formula | Description |
-|---|---|---|
-| `Yield_Global` | average daily return × 252 | Annual yield for the entire history |
-| `Yield_Recent` | average daily return × 252 (last 2 years) | "Fresh" annual yield |
-| `Volatility` | st. deviation of daily returns × √252 | Annualized volatility |
-| `Group` | `pd.qcut(Yield_Global, q=3)` | Tercile: `Laggards` / `Neutral` / `Leaders` |
-| `Trend` | `Yield_Recent > Yield_Global` | `Accelerating` / `Slowing` |
-
-Input data is pre-cleaned: daily movements >±50% are masked as NaN to protect against technical glitches. Stocks without a 2-year history are removed.
-
-#### 3. `optimizer.py` — `PortfolioEngine` Class
-
-Operates in three steps: selection → estimation → optimization.
-
-**Step 1. Candidate Selection (`_apply_clustering`):**
-- **Core:** A fixed list of "Blue Chips" (SBER, GAZP, LKOH, etc.); if present in data, they are always added.
-- **Satellites:** Candidates (`Leaders` and `Neutral` with positive recent yield) are clustered using `KMeans` (6 clusters) by standardized features `[Yield_Recent, Volatility]`. The top 2 by `Yield_Recent` from each cluster are chosen to ensure diversification.
-- **De-correlation:** For pairs with |correlation| > 0.85, the stock with the lower `Yield_Global / Volatility` ratio is removed.
-
-**Step 2. Estimation (PyPortfolioOpt):**
-- Expected returns `mu` — based on historical mean.
-- Covariance matrix `S` — Ledoit–Wolf shrinkage (more stable than sample covariance).
-
-**Step 3. Portfolio Construction (`build_portfolios`):**
-
-| Portfolio | Key | Optimization Method | Blue Chip Limits | Others Limits | Concept |
-|---|---|---|---|---|---|
-| Conservative | `SAFE` | `min_volatility` | 2–15% | 0–10% | Minimum risk |
-| Optimal | `OPTIMAL` | `max_sharpe` | 3–15% | 0–15% | Maximum Sharpe Ratio |
-| Aggressive | `PROFIT` | `efficient_return` (OPTIMAL + 5%) | 1–20% | 0–25% | Higher return target |
-| Speculative | `RISKY` | `max_sharpe` on top 3 yielders | ≤ 60% | — | Maximum return focus |
-
-#### 4. `backtester.py` — `BacktestEngine` Class
-
-Computes how the constructed portfolios would have performed over the last N years (`run_period`):
-- **portfolio daily return**: weighted sum of stock returns with fixed weights (equivalent to free daily rebalancing to target allocations);
-- **cumulative capital curve**: (1 + r).cumprod();
-- **metrics**: total return, maximum drawdown, Sharpe ratio = (annualized return − risk-free rate) / volatility.
-
-Benchmark — median daily return of all stocks in the sample (_get_market_benchmark): the behavior of a "typical stock" on the same dates. This is a non-investable reference; comparison against the MCFTR total return index is planned.
-
-**Note:** The "Market" benchmark is calculated as the **median daily return of all stocks**, which ignores outliers and provides a realistic "typical stock" comparison.
-
----
-
-## Technologies
+## Technologies & Dependencies
 
 | Library | Purpose |
 |---|---|
-| pandas, numpy | Data processing and numerical calculations |
-| requests | HTTP requests to MOEX ISS API |
-| scikit-learn | KMeans clustering and feature scaling |
-| PyPortfolioOpt | Efficient Frontier, Ledoit–Wolf, weight optimization |
-| matplotlib | Visualization of capital growth |
+| **pandas, numpy** | Data processing and numerical calculations |
+| **requests** | Interaction with official MOEX ISS API |
+| **scikit-learn** | KMeans clustering and feature scaling |
+| **PyPortfolioOpt** | Efficient Frontier and Ledoit-Wolf shrinkage |
+| **matplotlib** | Visualization of backtest results |
 
 ---
 
-## Usage
+## Installation & Setup
 
+### 1. Clone the repository
 ```bash
-# Install dependencies
-pip install pandas numpy requests scikit-learn PyPortfolioOpt matplotlib
+git clone https://github.com/vladislav585/moex-ai-portfolio.git
+cd moex-ai-portfolio
+```
 
-# Run the pipeline
+### 2. Install dependencies
+```bash
+pip install pandas numpy requests scikit-learn matplotlib PyPortfolioOpt
+```
+
+### 3. Run the pipeline
+```bash
 python pipeline.py
 ```
+*Note: On the first run, the system will create the `data/` folder and download historical data (takes 2-3 minutes).*
 
 ---
 
 ## Configuration
 
-| Parameter | Location | Default | Description |
+| Parameter | Location | Value | Description |
 |---|---|---|---|
-| `min_volume` | `pipeline.py` | 15,000,000 | Minimum daily volume filter |
-| `start` | `pipeline.py` | 2000-01-01 | History start date |
-| `risk_free_rate`| `pipeline.py` | 0.14 | Benchmark for Sharpe Ratio |
-| `n_clusters` | `optimizer.py` | 6 | Number of KMeans clusters |
-| `threshold` | `optimizer.py` | 0.85 | Correlation filter threshold |
-
----
-
-## Key Project Decisions
-
-1. **Outlier Filtering**: Daily price changes >50% are masked as NaN to protect against data glitches. Side effect: genuine extreme moves are masked too, and stock splits are not handled as splits. This is a simplification — see "Limitations"
-2. **Median Benchmark:** A quick solution that avoids loading index data. It reflects a "typical stock" but is not an investable benchmark — a proper one (MCFTR) is planned.
-3. **Guaranteed Core:** Minimum weights for Blue Chips ensure the model maintains a foundation in high-liquidity large-cap stocks.
-4. **Ledoit–Wolf Shrinkage:** Improves the stability of the Markowitz optimization, especially when dealing with limited historical data.
+| `split_date` | `pipeline.py` | 2025-01-01 | Boundary between training and testing data |
+| `risk_free_rate`| `pipeline.py` | 0.14 | Risk-free rate (benchmark for Sharpe Ratio) |
+| `min_volume` | `importer.py` | 15,000,000 | Minimum daily volume filter (RUB) |
 
 ---
 
 ## License & Copyright
 
-© 2026 Vladislav585
+© 2026 Vladislav585. This software is provided for **Non-Commercial Use Only**.
 
-This software is provided for **Non-Commercial Use Only**.
-
-- **Permitted:** Copying, modifying, and using the code for personal or educational purposes.
-- **Prohibited:** Commercial use, re-selling, or use for-profit financial services.
-
-**Disclaimer:** The author is not responsible for any financial losses or consequences resulting from the use of this code. All calculations are theoretical and do not constitute financial advice.
-
-© 2026 Vladislav585. All rights reserved.
+**Disclaimer:** All calculations are theoretical. The author is not responsible for any financial losses. All rights reserved.
