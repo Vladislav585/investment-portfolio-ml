@@ -117,7 +117,7 @@ class BacktestEngine:
             linestyle = '--' if name == 'MARKET' else '-'
             plt.plot(series, label=name, linewidth=linewidth, linestyle=linestyle)
         
-        plt.title("Динамика капитала: Ежегодная переборка портфелей ИИ (Walk-Forward)")
+        plt.title("Динамика капитала: Ежегодная переборка портфелей (Walk-Forward)")
         plt.xlabel("Дата")
         plt.ylabel("Рост 1 рубля")
         plt.legend()
